@@ -75,6 +75,44 @@
         return files;
     }
 
+    function findStartPath() {
+        var startpath;
+        if (isApp && recent_projects && recent_projects.length) {
+            let first_recent_project = recent_projects.find(p => !p.favorite) || recent_projects[0];
+            startpath = first_recent_project.path;
+            if (typeof startpath == 'string') {
+                startpath = startpath.replace(/[\\\/][^\\\/]+$/, '');
+            }
+        }
+        return startpath;
+    }
+
+    async function handleExportAsGlTFFolder() {
+        const startpath = findStartPath();
+        const folder = selectFolder('project', startpath, 'Select Project Folder to Export')
+        const files = findFiles(folder);
+        for (const file of files)
+        {
+            await loadModelFileAndExport(file, path.dirname(file.path), Codecs.gltf);
+        }
+    }
+
+    async function handleExportAsGlTF() {
+        const startpath = findStartPath();
+        const folder = selectFolder('gltf', startpath, 'Select Export Folder')
+        Blockbench.import({
+            resource_id: 'model',
+            extensions: ['bbmodel'],
+            type: 'Model',
+            startpath,
+            multiple: true
+        }, async function(files) {
+            for (const file of files) {
+                await loadModelFileAndExport(file, folder, Codecs.gltf);
+            }
+        })
+    }
+
     function deleteAll(button) {
         if (button.children)
         {
@@ -88,61 +126,20 @@
         author: 'Miquiis',
         description: 'This plugins allows you to bulk export Blockbench projects into other extentions.',
         icon: 'fas.fa-file-import',
-        version: '1.1.0',
+        version: '1.1.1',
         variant: 'both',
         onload() {
             export_as_gltf = new Action('export_as_gltf', {
                 name: 'Export as glTF',
                 description: 'Export all Blockbench projects into glTF.',
                 icon: 'icon-gltf',
-                click: async function() {
-                    var startpath;
-                    if (isApp && recent_projects && recent_projects.length) {
-                        let first_recent_project = recent_projects.find(p => !p.favorite) || recent_projects[0];
-                        startpath = first_recent_project.path;
-                        if (typeof startpath == 'string') {
-                            startpath = startpath.replace(/[\\\/][^\\\/]+$/, '');
-                        }
-                    }
-
-                    var folder = selectFolder('gltf', startpath, 'Select Export Folder')
-        
-                    Blockbench.import({
-                        resource_id: 'model',
-                        extensions: ['bbmodel'],
-                        type: 'Model',
-                        startpath,
-                        multiple: true
-                    }, async function(files) {
-                        for (const file of files) {
-                            await loadModelFileAndExport(file, folder, Codecs.gltf);
-                        }
-                    })
-                }
+                click: handleExportAsGlTF
             })
             export_as_gltf_folder = new Action('export_as_gltf_folder', {
                 name: 'Export as glTF',
                 description: 'Export all Blockbench projects inside given folder into glTF.',
                 icon: 'icon-gltf',
-                click: async function() {
-                    var startpath;
-                    if (isApp && recent_projects && recent_projects.length) {
-                        let first_recent_project = recent_projects.find(p => !p.favorite) || recent_projects[0];
-                        startpath = first_recent_project.path;
-                        if (typeof startpath == 'string') {
-                            startpath = startpath.replace(/[\\\/][^\\\/]+$/, '');
-                        }
-                    }
-
-                    var folder = selectFolder('project', startpath, 'Select Project Folder to Export')
-
-                    const files = findFiles(folder);
-
-                    for (const file of files)
-                    {
-                        await loadModelFileAndExport(file, path.dirname(file.path), Codecs.gltf);
-                    }
-                }
+                click: handleExportAsGlTFFolder
             })
             export_files = new Action('bulk_export_files', {
                 name: 'Bulk Export Files...',
@@ -157,7 +154,6 @@
                 name: 'Bulk Export Folder...',
                 description: 'Bulk Export multiple .bbmodel files inside of a folder.',
                 icon: 'fas.fa-file-import',
-                condition(){return !Project},
                 children: [
                     export_as_gltf_folder
                 ]
@@ -166,6 +162,7 @@
                 name: 'Bulk Export...',
                 description: 'Bulk Export multiple Blockbench projects into a desired format.',
                 icon: 'fas.fa-file-import',
+                condition(){return !Project},
                 children: [
                     export_folder,
                     export_files
