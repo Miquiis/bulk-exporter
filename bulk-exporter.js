@@ -42,7 +42,7 @@
         author: 'Miquiis',
         description: 'This plugins allows you to bulk export Blockbench projects into other extentions.',
         icon: 'fas.fa-file-import',
-        version: '0.0.1',
+        version: '1.0.0',
         variant: 'both',
         onload() {
             button = new Action('bulk_export', {
