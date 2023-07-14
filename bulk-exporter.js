@@ -1,7 +1,9 @@
 (function() {
     const path = require('path');
     const fs = require('fs');
+
     const registeredButtons = [];
+    const foldersCreated = [];
 
     var mudstackAccessToken = "";
     var mudstackAccountId = "";
@@ -14,7 +16,8 @@
     var export_as_gltf_folder;
     var upload_to_mudstack_as_gltf_folder;
     var upload_to_mudstack_as_gltf_file;
-    var login_in_to_mudstack;
+    var login_in_to_mudstack_file;
+    var login_in_to_mudstack_folder;
 
     async function loadModelFileAndExport(file, folder, asCodec) {
 
@@ -90,20 +93,20 @@
         }
     }
 
-    async function sendKeyToMudstack(fileName, key) {
+    async function sendKeyToMudstack(fileName, fileLocation, key) {
         try {
             const response = await fetch('https://api.mudstack.com/workspaces/assets/upload/assets', {
                 method: 'POST',
                 headers: {
                     "Content-Type": "application/json",
-                    "authorization": `Bearer ${mudstackAccessToken}`,
+                    "authorization": mudstackAccessToken,
                     "x-account-id": mudstackAccountId,
                     "x-workspace-id": mudstackWorkspaceId,
                 },
                 body: JSON.stringify({
                     "temp_file_key": key,
                     "original_file_name": fileName,
-                    "file_location": "/Test Folder/"
+                    "file_location": fileLocation
                 })
             });
             if (response.ok) {
@@ -122,9 +125,9 @@
                 method: 'POST',
                 headers: {
                     "Content-Type": "application/json",
-                    "authorization": `Bearer ${mudstackAccessToken}`,
-                    "x-account-id": "4b6a84b4-6b47-4af8-b7e6-0046e77c5953",
-                    "x-workspace-id": "d70f8686-c2ea-4925-a25b-02a71aa2fecb",
+                    "authorization": mudstackAccessToken,
+                    "x-account-id": mudstackAccountId,
+                    "x-workspace-id": mudstackWorkspaceId,
                 },
                 body: JSON.stringify({
                     "name": fileName
@@ -145,15 +148,12 @@
 
     async function uploadFileToSignedUrl(file, signedUrl) {
         try {
-            const formData = new FormData();
-            formData.append('file', file);
-
             const response = await fetch(signedUrl, {
                 method: 'PUT',
                 headers: {
                     "Content-Type": ""
                 },
-                body: formData
+                body: file
             });
 
             if (response.ok) {
@@ -167,15 +167,76 @@
         }
     }
 
-    async function uploadToMudstack(fileName, file) {
+    async function createFolderMudstack(folderName) {
+        if (foldersCreated.includes(folderName)) {
+            return { response: true, message: 'Folder already created.' };;
+        }
+        try {
+            const response = await fetch(`https://api.mudstack.com/workspaces/folders?folder=${folderName}`, {
+                headers: {
+                    "authorization": mudstackAccessToken,
+                    "x-account-id": mudstackAccountId,
+                    "x-workspace-id": mudstackWorkspaceId,
+                },
+                method: "POST"
+            });
+            
+            if (response.ok) {
+                foldersCreated.push(folderName);
+                return { response: await response.json() }; 
+            } else {
+                return { response: false, message: response.statusText, error: response.status };
+            }
+        } catch (error) {
+            return { response: false, error: error }
+        }
+    }
+
+    async function fetchFolderMudstack(folder) {
+        try {
+            const folderQuery = {
+                folder: folder,
+                sort: [{ column: "", dir: "" }],
+                pagination: { limit: 30, offset: 0, page: 1 }
+            };
+            const jsonString = JSON.stringify(folderQuery);
+            const encodedString = encodeURIComponent(jsonString);
+            const response = await fetch(`https://api.mudstack.com/workspaces/assets/search?query=${encodedString}`, {
+                headers: {
+                    "authorization": mudstackAccessToken,
+                    "x-account-id": mudstackAccountId,
+                    "x-workspace-id": mudstackWorkspaceId,
+                }
+            });
+            if (response.ok) {
+                return { response: await response.json() }; 
+            } else {
+                return { response: false, message: response.statusText, error: response.status };
+            }
+        } catch (error) {
+            console.error(error);
+            return { response: false, error: error}
+        } 
+    }
+
+    async function createFolderStructureMudstack(folder) {
+        const folders = folder.split('/');
+        let currentFolder = "";
+        for (const folderPath of folders) {
+            currentFolder += "/" + folderPath;
+            await createFolderMudstack(currentFolder);
+        }
+    }
+
+    async function uploadToMudstack(fileName, fileLocation, file) {
         const mudstackResponse = await getSignedUrlFromMudstack(fileName);
         if (mudstackResponse.error) {
-            console.log(mudstackResponse.error); 
+            console.error(mudstackResponse.error); 
             return;
         }
         const uploadResponse = await uploadFileToSignedUrl(file, mudstackResponse.signed_url);
         if (uploadResponse.response) {
-            const mudstackUploadResponse = await sendKeyToMudstack(fileName, mudstackResponse.key);
+            const mudstackUploadResponse = await sendKeyToMudstack(fileName, fileLocation, mudstackResponse.key);
             if (!mudstackUploadResponse.error) {
                 console.log(mudstackUploadResponse);
             } else {
@@ -228,7 +289,154 @@
         return startpath;
     }
 
+    function extractJsonObject(str) {
+        let count = 0;
+        let startIndex = str.indexOf('{');
+        if (startIndex === -1) {
+          return null;
+        }
+      
+        for (let i = startIndex; i < str.length; i++) {
+          if (str[i] === '{') {
+            count++;
+          } else if (str[i] === '}') {
+            count--;
+          }
+      
+          if (count === 0) {
+            const jsonString = str.substring(startIndex, i + 1);
+            try {
+              const jsonObject = JSON.parse(jsonString);
+              return jsonObject;
+            } catch (error) {
+              startIndex = str.indexOf('{', i);
+              if (startIndex === -1) {
+                break;
+              }
+              count = 0;
+              i = startIndex - 1;
+            }
+          }
+        }
+      
+        return null;
+    }
+
+    function createUploadPathForFile(file, folder, prefix = "") 
+    {
+        const fileName = path.parse(file.path).name;
+        let mainPath = file.path.substring(file.path.indexOf(path.basename(folder)), file.path.indexOf(file.name));
+        if (path.basename(mainPath) !== fileName) {
+            mainPath = path.join(mainPath, fileName);
+        }
+        return (prefix + mainPath).replace(/\\/g, "/");
+    }
+
+    async function getMudstackUploadOptions() {
+        return await new Promise((resolve, reject) => {
+            let form = {
+                rootFolder: { type: "text", label: "Root Folder", value: "/PZ/", description: "Choose folder to upload to."}
+            };
+            var dialog = new Dialog('mudstack_upload_options', {
+                title: 'Mudstack Upload Options',
+                width: 480,
+                form,
+                onConfirm(formResult) {
+                    const rootFolder = formResult.rootFolder;
+                    if (!rootFolder.startsWith('/') && !rootFolder.endsWith('/')) {
+                        Blockbench.showMessageBox({ title: "Root Folder malformed", message: "Make sure the root folder starts and ends with '/'"})
+                        return false;
+                    }
+                    resolve(formResult);
+                },
+                onCancel() {
+                    resolve(null);
+                }
+            })
+            dialog.show();
+        });
+    }
+
     async function handleLogInToMudstack() {
+        await new Promise((resolve, reject) => {
+            let form = {
+                token: { type: "text", label: "Access Token"},
+                accountId: { type: "text", label: "Account ID"},
+                workspaceId: { type: "text", label: "Workspace ID"}
+            };
+            var dialog = new Dialog('mudstack_credentials', {
+                title: 'Mudstack Credentials',
+                width: 480,
+                form,
+                buttons: [
+                    'Open mudstack',
+                    'Paste from Clipboard',
+                    'dialog.confirm', 'dialog.cancel'
+                ],
+                onCancel() {
+                    resolve(null)
+                },
+                onButton(buttonId) {
+                    if (buttonId === 0) {
+                        Blockbench.openLink('https://app.mudstack.com/');
+                        return false;
+                    } else if (buttonId === 1) {
+                        const clipboardText = clipboard.readText();
+                        const jsonObject = extractJsonObject(clipboardText);
+                        if (jsonObject) {
+                            if (jsonObject.headers?.authorization && jsonObject["headers"]["x-account-id"] && jsonObject["headers"]["x-workspace-id"]) {
+                                const authorizationToken = jsonObject.headers.authorization;
+                                const _accountId = jsonObject["headers"]["x-account-id"];
+                                const _workspaceId = jsonObject["headers"]["x-workspace-id"];
+                                dialog.setFormValues({
+                                    token: authorizationToken,
+                                    accountId: _accountId,
+                                    workspaceId: _workspaceId
+                                });
+                            } else {
+                                Blockbench.showMessageBox({ title: "Unacceptable Request.", width: 480, message: "This request is not acceptable. Make sure to log in to your mudstack account, press [CTRL+Shift+I] to open the dev tools from Chrome, and navigate to the Network Tab. Click on [Fetch/XHR] on the filter options and leave it here. On the mudstack website, go to the workspace you want to upload. Back on the dev tools, you should see a list of request, search for one called [recent]. Right click it, go to Copy > Copy as fetch. You can now close this message and click [Copy from Clipboard] again."});
+                            }
+                        } else {
+                            Blockbench.showMessageBox({ title: "Fetch not found.", width: 480, message: "The fetch command was not found. Make sure to log in to your mudstack account, press [CTRL+Shift+I] to open the dev tools from Chrome, and navigate to the Network Tab. Click on [Fetch/XHR] on the filter options and leave it here. On the mudstack website, go to the workspace you want to upload. Back on the dev tools, you should see a list of request, search for one called [recent]. Right click it, go to Copy > Copy as fetch. You can now close this message and click [Copy from Clipboard] again."});
+                        }
+                        return false;
+                    } else if (buttonId === 1) {
+                        const formResults = dialog.getFormResult();
+                        if (formResults.token.length > 0 && formResults.accountId.length > 0 && formResults.workspaceId.length > 0)
+                        {
+                            fetch('https://api.mudstack.com/workspaces/folders/stats?folder=/', {
+                                headers: {
+                                    "Authorization": formResults.token,
+                                    "X-Account-Id": formResults.accountId,
+                                    "X-Workspace-Id": formResults.workspaceId
+                                }
+                            }).then(result => {
+                                if (result.ok) {
+                                    dialog.close();
+                                    Blockbench.showQuickMessage("Authenticated!");
+                                    mudstackAccessToken = formResults.token;
+                                    mudstackAccountId = formResults.accountId;
+                                    mudstackWorkspaceId = formResults.workspaceId;
+                                    resolve(true);
+                                } else {
+                                    Blockbench.showMessageBox({ title: "Bad Request", width: 480, message: "Please refresh the mudstack page and copy another request again."});
+                                    dialog.setFormValues({
+                                        token: "",
+                                        accountId: "",
+                                        workspaceId: ""
+                                    });
+                                    clipboard.writeText('');
+                                }
+                            }).catch(err => {
+                                console.error(err);
+                            })
+                            return false;
+                        }
+                    }
+                }
+            });
+            dialog.show();
+        })
     }
 
     async function handleExportAsGltfFolder() {
@@ -241,9 +449,30 @@
         }
     }
 
+    async function handleUploadFolderToMudstack() {
+        const mudstackUploadOptions = await getMudstackUploadOptions();
+        if (mudstackUploadOptions) {
+            const startpath = findStartPath();
+            const folder = selectFolder('project', startpath, 'Select Project Folder to Export');
+            const files = findFiles(folder);
+            for (const file of files)
+            {
+                const convertedModel = {...await loadModelFileAndConvert(file, Codecs.gltf),
+                    uploadPath: createUploadPathForFile(file, folder, mudstackUploadOptions.rootFolder)
+                };
+                var messageBox = new MessageBox({ title: "Uploading Files", buttons: [], message: "Files are being uploaded, please wait."}, () => {}).show();
+                await createFolderStructureMudstack(convertedModel.uploadPath);
+                await uploadToMudstack(convertedModel.name, `${convertedModel.uploadPath}/`, convertedModel.content);
+                await uploadToMudstack(file.name, `${convertedModel.uploadPath}/`, file.content);
+                messageBox.close();
+            }
+            Blockbench.showQuickMessage("Models uploaded!");
+        }
+    }
+
     async function handleUploadToMudstackFolder() {
         const startpath = findStartPath();
-        const folder = selectFolder('project', startpath, 'Select Project Folder to Export')
+        const folder = selectFolder('project', startpath, 'Select Project Folder to Export');
         const files = findFiles(folder);
         for (const file of files)
         {
@@ -298,25 +527,35 @@
         author: 'Miquiis',
         description: 'This plugins allows you to bulk export Blockbench projects into other extentions.',
         icon: 'fas.fa-file-import',
-        version: '1.1.1',
+        version: '2.0.0',
         variant: 'both',
         onload() {
-            login_in_to_mudstack = registerButton(new Action('login_in_to_mudstack', {
+            login_in_to_mudstack_file = registerButton(new Action('login_in_to_mudstack_file', {
                 name: 'Log in to mudstack',
                 description: 'Log in to mudstack website.',
                 icon: 'share',
+                condition() { return !mudstackAccessToken; },
+                click: handleLogInToMudstack
+            })),
+            login_in_to_mudstack_folder = registerButton(new Action('login_in_to_mudstack_folder', {
+                name: 'Log in to mudstack',
+                description: 'Log in to mudstack website.',
+                icon: 'share',
+                condition() { return !mudstackAccessToken; },
                 click: handleLogInToMudstack
             }))
             upload_to_mudstack_as_gltf_folder = registerButton(new Action('upload_to_mudstack_as_gltf_folder', {
                 name: 'Upload to mudstack as glTF',
                 description: 'Upload all files to mudstack as glTF.',
                 icon: 'share',
-                click: handleUploadToMudstackFolder
+                condition() { return mudstackAccessToken; },
+                click: handleUploadFolderToMudstack
             }))
             upload_to_mudstack_as_gltf_file = registerButton(new Action('upload_to_mudstack_as_gltf_file', {
                 name: 'Upload to mudstack as glTF',
                 description: 'Upload all files to mudstack as glTF.',
                 icon: 'share',
+                condition() { return mudstackAccessToken; },
                 click: handleUploadToMudstackFile
             }))
             export_as_gltf = registerButton(new Action('export_as_gltf', {
@@ -337,6 +576,7 @@
                 icon: 'fas.fa-file-import',
                 children: [
                     export_as_gltf,
+                    login_in_to_mudstack_file,
                     upload_to_mudstack_as_gltf_file
                 ]
             }))
@@ -346,6 +586,7 @@
                 icon: 'fas.fa-file-import',
                 children: [
                     export_as_gltf_folder,
+                    login_in_to_mudstack_folder,
                     upload_to_mudstack_as_gltf_folder
                 ]
             }))
@@ -360,7 +601,6 @@
                 ]
             }));
             MenuBar.addAction(export_bulk, 'file.4');
-            MenuBar.addAction(login_in_to_mudstack, 'file');
         },
         onunload() {
             deleteAllButtons();
