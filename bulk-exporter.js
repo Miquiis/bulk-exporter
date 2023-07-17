@@ -369,7 +369,7 @@
                             Blockbench.showMessageBox({ title: "Fetch not found.", width: 480, message: "The fetch command was not found. Make sure to log in to your mudstack account, press [CTRL+Shift+I] to open the dev tools from Chrome, and navigate to the Network Tab. Click on [Fetch/XHR] on the filter options and leave it here. On the mudstack website, go to the workspace you want to upload. Back on the dev tools, you should see a list of request, search for one called [recent]. Right click it, go to Copy > Copy as fetch. You can now close this message and click [Copy from Clipboard] again."});
                         }
                         return false;
-                    } else if (buttonId === 1) {
+                    } else if (buttonId === 2) {
                         const formResults = dialog.getFormResult();
                         if (formResults.token.length > 0 && formResults.accountId.length > 0 && formResults.workspaceId.length > 0)
                         {
@@ -469,7 +469,7 @@
         author: 'Miquiis',
         description: 'This plugins allows you to bulk export Blockbench projects into other extentions.',
         icon: 'fas.fa-file-import',
-        version: '2.1.0',
+        version: '2.1.1',
         variant: 'both',
         onload() {
             login_in_to_mudstack_folder = registerButton(new Action('login_in_to_mudstack_folder', {
