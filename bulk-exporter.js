@@ -9,14 +9,10 @@
     var mudstackAccountId = "";
     var mudstackWorkspaceId = "";
 
-    var export_files;
-    var export_as_gltf;
     var export_bulk;
     var export_folder;
     var export_as_gltf_folder;
     var upload_to_mudstack_as_gltf_folder;
-    var upload_to_mudstack_as_gltf_file;
-    var login_in_to_mudstack_file;
     var login_in_to_mudstack_folder;
 
     async function loadModelFileAndExport(file, folder, asCodec) {
@@ -190,33 +186,6 @@
         } catch (error) {
             return { response: false, error: error }
         }
-    }
-
-    async function fetchFolderMudstack(folder) {
-        try {
-            const folderQuery = {
-                folder: folder,
-                sort: [{ column: "", dir: "" }],
-                pagination: { limit: 30, offset: 0, page: 1 }
-            };
-            const jsonString = JSON.stringify(folderQuery);
-            const encodedString = encodeURIComponent(jsonString);
-            const response = await fetch(`https://api.mudstack.com/workspaces/assets/search?query=${encodedString}`, {
-                headers: {
-                    "authorization": mudstackAccessToken,
-                    "x-account-id": mudstackAccountId,
-                    "x-workspace-id": mudstackWorkspaceId,
-                }
-            });
-            if (response.ok) {
-                return { response: await response.json() }; 
-            } else {
-                return { response: false, message: response.statusText, error: response.status };
-            }
-        } catch (error) {
-            console.error(error);
-            return { response: false, error: error}
-        } 
     }
 
     async function createFolderStructureMudstack(folder) {
@@ -470,33 +439,6 @@
         }
     }
 
-    async function handleUploadToMudstackFolder() {
-        const startpath = findStartPath();
-        const folder = selectFolder('project', startpath, 'Select Project Folder to Export');
-        const files = findFiles(folder);
-        for (const file of files)
-        {
-            const convertedModel = await loadModelFileAndConvert(file, Codecs.gltf);
-            await uploadToMudstack(convertedModel.name, convertedModel.content);
-        }
-    }
-
-    async function handleUploadToMudstackFile() {
-        const startpath = findStartPath();
-        Blockbench.import({
-            resource_id: 'model',
-            extensions: ['bbmodel'],
-            type: 'Model',
-            startpath,
-            multiple: true
-        }, async function(files) {
-            for (const file of files) {
-                const convertedModel = await loadModelFileAndConvert(file, Codecs.gltf);
-                await uploadToMudstack(convertedModel.name, convertedModel.content);
-            }
-        })
-    }
-
     async function handleExportAsGltf() {
         const startpath = findStartPath();
         const folder = selectFolder('gltf', startpath, 'Select Export Folder')
@@ -527,16 +469,9 @@
         author: 'Miquiis',
         description: 'This plugins allows you to bulk export Blockbench projects into other extentions.',
         icon: 'fas.fa-file-import',
-        version: '2.0.0',
+        version: '2.1.0',
         variant: 'both',
         onload() {
-            login_in_to_mudstack_file = registerButton(new Action('login_in_to_mudstack_file', {
-                name: 'Log in to mudstack',
-                description: 'Log in to mudstack website.',
-                icon: 'share',
-                condition() { return !mudstackAccessToken; },
-                click: handleLogInToMudstack
-            })),
             login_in_to_mudstack_folder = registerButton(new Action('login_in_to_mudstack_folder', {
                 name: 'Log in to mudstack',
                 description: 'Log in to mudstack website.',
@@ -551,13 +486,6 @@
                 condition() { return mudstackAccessToken; },
                 click: handleUploadFolderToMudstack
             }))
-            upload_to_mudstack_as_gltf_file = registerButton(new Action('upload_to_mudstack_as_gltf_file', {
-                name: 'Upload to mudstack as glTF',
-                description: 'Upload all files to mudstack as glTF.',
-                icon: 'share',
-                condition() { return mudstackAccessToken; },
-                click: handleUploadToMudstackFile
-            }))
             export_as_gltf = registerButton(new Action('export_as_gltf', {
                 name: 'Export as glTF',
                 description: 'Export all Blockbench projects into glTF.',
@@ -569,16 +497,6 @@
                 description: 'Export all Blockbench projects inside given folder into glTF.',
                 icon: 'icon-gltf',
                 click: handleExportAsGltfFolder
-            }))
-            export_files = registerButton(new Action('bulk_export_files', {
-                name: 'Export files...',
-                description: 'Bulk export multiple .bbmodel files.',
-                icon: 'fas.fa-file-import',
-                children: [
-                    export_as_gltf,
-                    login_in_to_mudstack_file,
-                    upload_to_mudstack_as_gltf_file
-                ]
             }))
             export_folder = registerButton(new Action('bulk_export_folder', {
                 name: 'Export from folder...',
@@ -597,7 +515,6 @@
                 condition(){return !Project},
                 children: [
                     export_folder,
-                    export_files
                 ]
             }));
             MenuBar.addAction(export_bulk, 'file.4');
